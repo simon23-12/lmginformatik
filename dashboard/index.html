@@ -18,6 +18,9 @@
     --cream: #f2e9d8;
     --text: #c8d4e8;
     --dim: #5d7294;
+    --green: #4caf7d;
+    --yellow: #e0b23c;
+    --red: #e0584f;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -37,7 +40,6 @@
     font-family: 'IBM Plex Mono', monospace; font-size: .68rem; color: var(--dim);
     text-align: right; line-height: 1.7;
   }
-  .who b { color: var(--blue-bright); font-weight: 500; }
   #logoutBtn {
     cursor: pointer; margin-top: .5rem;
     font-family: 'IBM Plex Mono', monospace; font-size: .65rem; letter-spacing: .2em;
@@ -51,6 +53,38 @@
     font-weight: 700; font-size: 1.05rem; letter-spacing: .1em; text-transform: uppercase;
     color: var(--cream); margin-bottom: 1.2rem;
   }
+  .crumbs {
+    font-family: 'IBM Plex Mono', monospace; font-size: .68rem; letter-spacing: .1em;
+    color: var(--dim); margin-bottom: 1.2rem;
+  }
+  .crumbs span { cursor: pointer; }
+  .crumbs span:hover { color: var(--orange); }
+
+  /* Fortschrittsbalken */
+  .progress-block { margin-bottom: 1.8rem; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace; font-size: .65rem; letter-spacing: .1em;
+    color: var(--dim); margin-bottom: .4rem; text-transform: uppercase;
+  }
+  .progress-track { width: 100%; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .progress-track i { display: block; height: 100%; background: var(--blue-bright); }
+  .progress-track.big i { background: var(--orange); }
+  .progress-track.mini { height: 5px; }
+
+  /* Kapitel-Kacheln */
+  .chapter-list { display: flex; flex-direction: column; gap: .8rem; }
+  .chapter-card {
+    cursor: pointer; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 1.1rem 1.4rem; transition: border-color .2s;
+  }
+  .chapter-card:hover { border-color: var(--orange); }
+  .chapter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .6rem; }
+  .chapter-num { color: var(--orange); font-family: 'IBM Plex Mono', monospace; font-size: .75rem; margin-right: .5em; }
+  .chapter-title { font-weight: 600; font-size: 1rem; color: var(--cream); }
+  .chapter-count { font-family: 'IBM Plex Mono', monospace; font-size: .65rem; color: var(--dim); }
+
+  /* Aufgaben */
   .task-card {
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
     padding: 1.4rem 1.6rem; margin-bottom: 1.2rem;
@@ -64,7 +98,9 @@
   }
   .status-open { background: rgba(93,114,148,.2); color: var(--dim); }
   .status-submitted { background: rgba(61,111,214,.2); color: var(--blue-bright); }
-  .status-graded { background: rgba(240,138,44,.2); color: var(--orange); }
+  .status-green { background: rgba(76,175,125,.2); color: var(--green); }
+  .status-yellow { background: rgba(224,178,60,.2); color: var(--yellow); }
+  .status-red { background: rgba(224,88,79,.2); color: var(--red); }
   textarea {
     width: 100%; min-height: 100px; resize: vertical;
     background: var(--bg); color: var(--cream);
@@ -74,10 +110,13 @@
   }
   textarea:focus { border-color: var(--blue-bright); }
   .feedback {
-    font-family: 'IBM Plex Mono', monospace; font-size: .78rem; color: var(--blue-bright);
-    background: rgba(61,111,214,.08); border-left: 2px solid var(--blue-bright);
+    font-family: 'IBM Plex Mono', monospace; font-size: .78rem;
+    border-left: 2px solid var(--dim);
     padding: .6em .9em; margin-bottom: .8rem;
   }
+  .feedback.green { color: var(--green); border-color: var(--green); background: rgba(76,175,125,.08); }
+  .feedback.yellow { color: var(--yellow); border-color: var(--yellow); background: rgba(224,178,60,.08); }
+  .feedback.red { color: var(--red); border-color: var(--red); background: rgba(224,88,79,.08); }
   .submit-btn {
     cursor: pointer; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: .85rem;
     letter-spacing: .15em; text-transform: uppercase; color: #06090f; background: var(--orange);
@@ -98,12 +137,14 @@
 </header>
 
 <main>
-  <div class="section-title">Deine Aufgaben</div>
-  <div id="taskList"><p class="empty">Lade Aufgaben …</p></div>
+  <div class="crumbs" id="crumbs"></div>
+  <div id="view"></div>
 </main>
 
 <script type="module">
 import { supabase, guardPage, SITE_ROOT } from '../assets/supabase-client.js';
+
+const EVAL_LABEL = { green: 'Richtig', yellow: 'Teilweise richtig', red: 'Nicht richtig' };
 
 const session = await guardPage('student');
 if (session) {
@@ -114,8 +155,10 @@ if (session) {
     .single();
 
   document.getElementById('whoName').textContent = student.display_name;
-
   const grade = student.classes?.grade ?? 6;
+
+  const view = document.getElementById('view');
+  const crumbs = document.getElementById('crumbs');
 
   const { data: topics } = await supabase
     .from('topics')
@@ -125,33 +168,92 @@ if (session) {
 
   const { data: submissions } = await supabase
     .from('submissions')
-    .select('task_id, answer_text, status, grade, feedback')
+    .select('task_id, answer_text, status, evaluation, feedback')
     .eq('student_id', student.id);
 
   const subByTask = Object.fromEntries((submissions ?? []).map(s => [s.task_id, s]));
 
-  const listEl = document.getElementById('taskList');
-  const tasks = (topics ?? []).flatMap(t => t.tasks ?? []).sort((a, b) => a.order_index - b.order_index);
+  function chapterProgress(topic) {
+    const tasks = topic.tasks ?? [];
+    const done = tasks.filter(t => subByTask[t.id]).length;
+    return { done, total: tasks.length };
+  }
 
-  if (tasks.length === 0) {
-    listEl.innerHTML = '<p class="empty">Noch keine Aufgaben verfügbar.</p>';
-  } else {
-    listEl.innerHTML = '';
+  function setCrumbs(items) {
+    crumbs.innerHTML = items.map((it, i) =>
+      `<span data-i="${i}">${it.label}</span>${i < items.length - 1 ? ' / ' : ''}`
+    ).join('');
+    crumbs.querySelectorAll('span').forEach(el => {
+      el.addEventListener('click', () => items[+el.dataset.i].action());
+    });
+  }
+
+  function showOverview() {
+    setCrumbs([{ label: 'Kapitel', action: showOverview }]);
+
+    const totals = (topics ?? []).reduce((acc, t) => {
+      const p = chapterProgress(t);
+      acc.done += p.done; acc.total += p.total;
+      return acc;
+    }, { done: 0, total: 0 });
+    const overallPct = totals.total ? Math.round((totals.done / totals.total) * 100) : 0;
+
+    view.innerHTML = `
+      <div class="progress-block">
+        <div class="progress-label"><span>Gesamtfortschritt Schuljahr</span><span>${totals.done} / ${totals.total}</span></div>
+        <div class="progress-track big"><i style="width:${overallPct}%"></i></div>
+      </div>
+      <div class="section-title">Kapitel</div>
+      <div class="chapter-list" id="chapterList"></div>
+    `;
+
+    const list = document.getElementById('chapterList');
+    for (const topic of topics ?? []) {
+      const p = chapterProgress(topic);
+      const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+      const card = document.createElement('div');
+      card.className = 'chapter-card';
+      card.innerHTML = `
+        <div class="chapter-top">
+          <div><span class="chapter-num">${topic.order_index}</span><span class="chapter-title">${topic.title}</span></div>
+          <span class="chapter-count">${p.total ? `${p.done} / ${p.total}` : 'bald verfügbar'}</span>
+        </div>
+        <div class="progress-track mini"><i style="width:${pct}%"></i></div>
+      `;
+      card.addEventListener('click', () => showChapter(topic));
+      list.appendChild(card);
+    }
+  }
+
+  function showChapter(topic) {
+    setCrumbs([
+      { label: 'Kapitel', action: showOverview },
+      { label: `${topic.order_index} ${topic.title}`, action: () => showChapter(topic) },
+    ]);
+
+    const tasks = (topic.tasks ?? []).sort((a, b) => a.order_index - b.order_index);
+    view.innerHTML = `<div class="section-title">${topic.order_index}. ${topic.title}</div><div id="taskList"></div>`;
+    const listEl = document.getElementById('taskList');
+
+    if (tasks.length === 0) {
+      listEl.innerHTML = '<p class="empty">Für dieses Kapitel gibt es noch keine Aufgaben.</p>';
+      return;
+    }
+
     for (const task of tasks) {
       const sub = subByTask[task.id];
       const card = document.createElement('div');
       card.className = 'task-card';
 
-      const statusClass = sub?.status === 'graded' ? 'status-graded'
-        : sub ? 'status-submitted' : 'status-open';
-      const statusLabel = sub?.status === 'graded' ? 'Bewertet'
-        : sub ? 'Eingereicht' : 'Offen';
+      let statusClass = 'status-open', statusLabel = 'Offen';
+      if (sub?.evaluation) { statusClass = `status-${sub.evaluation}`; statusLabel = EVAL_LABEL[sub.evaluation]; }
+      else if (sub) { statusClass = 'status-submitted'; statusLabel = 'Eingereicht'; }
 
       card.innerHTML = `
         <div class="task-status ${statusClass}">${statusLabel}</div>
         <div class="task-title">${task.title}</div>
         <div class="task-content">${task.content}</div>
-        ${sub?.feedback ? `<div class="feedback">Feedback: ${sub.feedback}${sub.grade != null ? ` — Note: ${sub.grade}` : ''}</div>` : ''}
+        ${sub?.feedback ? `<div class="feedback ${sub.evaluation ?? ''}">Feedback: ${sub.feedback}</div>` : ''}
         <textarea placeholder="Deine Antwort …">${sub?.answer_text ?? ''}</textarea>
         <button class="submit-btn" type="button">Antwort speichern</button>
       `;
@@ -164,7 +266,9 @@ if (session) {
           student_id: student.id,
           task_id: task.id,
           answer_text: textarea.value,
-          status: 'submitted'
+          status: 'submitted',
+          evaluation: null,
+          feedback: null
         }, { onConflict: 'student_id,task_id' });
         btn.textContent = 'Gespeichert ✓';
         setTimeout(() => (btn.textContent = 'Antwort speichern'), 1500);
@@ -173,6 +277,8 @@ if (session) {
       listEl.appendChild(card);
     }
   }
+
+  showOverview();
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {

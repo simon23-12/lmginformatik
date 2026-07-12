@@ -18,6 +18,9 @@
     --cream: #f2e9d8;
     --text: #c8d4e8;
     --dim: #5d7294;
+    --green: #4caf7d;
+    --yellow: #e0b23c;
+    --red: #e0584f;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -87,14 +90,24 @@
     background: var(--bg); color: var(--cream); border: 1px solid var(--line); border-radius: 4px;
     font-family: 'Chakra Petch', sans-serif; font-size: .9rem; padding: .5em .7em;
   }
-  .grade-row input.grade-num { width: 70px; }
   .grade-row input.feedback-text { flex: 1; min-width: 180px; }
-  .grade-btn {
+  .eval-btn {
     cursor: pointer; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: .8rem;
-    letter-spacing: .1em; text-transform: uppercase; color: #06090f; background: var(--orange);
-    border: none; border-radius: 4px; padding: .55em 1.2em;
+    letter-spacing: .05em; color: #06090f;
+    border: none; border-radius: 4px; padding: .55em 1rem;
   }
-  .grade-btn:hover { background: var(--blue-bright); }
+  .eval-btn.green { background: var(--green); }
+  .eval-btn.yellow { background: var(--yellow); }
+  .eval-btn.red { background: var(--red); }
+  .eval-btn:hover { filter: brightness(1.15); }
+  .already-graded {
+    display: flex; align-items: center; gap: .6rem;
+    font-family: 'IBM Plex Mono', monospace; font-size: .7rem; letter-spacing: .1em;
+  }
+  .eval-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .eval-dot.green { background: var(--green); }
+  .eval-dot.yellow { background: var(--yellow); }
+  .eval-dot.red { background: var(--red); }
   .empty { color: var(--dim); font-family: 'IBM Plex Mono', monospace; font-size: .85rem; }
 </style>
 </head>
@@ -193,7 +206,7 @@ if (session) {
 
     const { data: submissions } = await supabase
       .from('submissions')
-      .select('id, student_id, task_id, answer_text, status, grade, feedback, tasks(title)')
+      .select('id, student_id, task_id, answer_text, status, evaluation, feedback, tasks(title)')
       .in('student_id', (students ?? []).map(s => s.id));
 
     const byStudent = {};
@@ -225,21 +238,27 @@ if (session) {
           <div class="submission-meta">${student?.display_name ?? '?'} — ${sub.tasks?.title ?? ''}</div>
           <div class="submission-answer">${sub.answer_text ?? '<i>(keine Antwort)</i>'}</div>
           <div class="grade-row">
-            <input type="text" class="grade-num" placeholder="Note">
-            <input type="text" class="feedback-text" placeholder="Feedback">
-            <button class="grade-btn" type="button">Bewerten</button>
+            <input type="text" class="feedback-text" placeholder="Kurzes Feedback (immer angeben)">
+            <button class="eval-btn green" type="button" data-eval="green">Richtig</button>
+            <button class="eval-btn yellow" type="button" data-eval="yellow">Teilweise</button>
+            <button class="eval-btn red" type="button" data-eval="red">Falsch</button>
           </div>
         `;
-        card.querySelector('.grade-btn').addEventListener('click', async () => {
-          const gradeVal = card.querySelector('.grade-num').value;
-          const feedbackVal = card.querySelector('.feedback-text').value;
-          await supabase.from('submissions').update({
-            status: 'graded',
-            grade: gradeVal ? Number(gradeVal) : null,
-            feedback: feedbackVal || null,
-            graded_at: new Date().toISOString()
-          }).eq('id', sub.id);
-          card.remove();
+        card.querySelectorAll('.eval-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const feedbackVal = card.querySelector('.feedback-text').value.trim();
+            if (!feedbackVal) {
+              card.querySelector('.feedback-text').focus();
+              return;
+            }
+            await supabase.from('submissions').update({
+              status: 'graded',
+              evaluation: btn.dataset.eval,
+              feedback: feedbackVal,
+              graded_at: new Date().toISOString()
+            }).eq('id', sub.id);
+            card.remove();
+          });
         });
         pendingList.appendChild(card);
       }

@@ -47,7 +47,7 @@ create table submissions (
   task_id uuid references tasks(id) on delete cascade,
   answer_text text,
   status text not null default 'submitted', -- 'submitted', 'graded'
-  grade numeric,
+  evaluation text check (evaluation in ('green','yellow','red')),
   feedback text,
   submitted_at timestamptz default now(),
   graded_at timestamptz,
