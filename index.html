@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMG INFORMATIK — Leibniz-Montessori-Gymnasium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06090f;
+    --panel: #0b1220;
+    --line: #1b2a42;
+    --blue: #3d6fd6;
+    --blue-bright: #6ea0ff;
+    --orange: #f08a2c;
+    --cream: #f2e9d8;
+    --text: #c8d4e8;
+    --dim: #5d7294;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Chakra Petch', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ── hero ─────────────────────────────── */
+  #hero { position: relative; height: 100vh; width: 100%; }
+  #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .hud {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    display: flex; flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(1.2rem, 3vw, 2.5rem);
+    z-index: 2;
+  }
+  .hud-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .brand {
+    font-weight: 700; font-size: 1.05rem; letter-spacing: .28em;
+    color: var(--cream);
+  }
+  .brand span { color: var(--orange); }
+  .sysline {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .68rem; color: var(--dim); text-align: right; line-height: 1.7;
+  }
+  .sysline b { color: var(--blue-bright); font-weight: 500; }
+
+  .hud-title { max-width: 640px; }
+  .kicker {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem; letter-spacing: .35em; text-transform: uppercase;
+    color: var(--orange); margin-bottom: .9rem;
+  }
+  .kicker::before { content: "▸ "; }
+  h1 {
+    font-size: clamp(2.4rem, 6.5vw, 5rem);
+    font-weight: 700; line-height: .98; letter-spacing: -.01em;
+    color: var(--cream); text-transform: uppercase;
+  }
+  h1 em { font-style: normal; color: var(--blue-bright); }
+  .sub {
+    margin-top: 1.1rem; font-weight: 300; font-size: clamp(.95rem, 1.6vw, 1.1rem);
+    color: var(--text); max-width: 46ch; line-height: 1.55;
+  }
+  /* staggered load-in */
+  .hud-top, .kicker, h1, .sub {
+    opacity: 0; transform: translateY(14px);
+    animation: rise .8s cubic-bezier(.2,.7,.2,1) forwards;
+  }
+  .hud-top { animation-delay: .2s; }
+  .kicker  { animation-delay: .45s; }
+  h1       { animation-delay: .6s; }
+  .sub     { animation-delay: .8s; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  /* loader */
+  #loader {
+    position: absolute; inset: 0; z-index: 5;
+    display: flex; flex-direction: column; gap: 1rem;
+    align-items: center; justify-content: center;
+    background: var(--bg);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .75rem; color: var(--dim); letter-spacing: .2em;
+    transition: opacity .6s ease;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  .bar { width: 220px; height: 2px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--orange); transition: width .2s; }
+
+</style>
+</head>
+<body>
+
+<section id="hero">
+  <canvas id="scene"></canvas>
+
+  <div id="loader">
+    <div>LADE PLATINE …</div>
+    <div class="bar"><i id="barfill"></i></div>
+  </div>
+
+  <div class="hud">
+    <div class="hud-top">
+      <div class="brand">LMG <span>INFORMATIK</span></div>
+      <div class="sysline">
+        Leibniz-Montessori-Gymnasium Düsseldorf<br>
+        <b>Herr Fuhs</b>
+      </div>
+    </div>
+    <div class="hud-title">
+      <div class="kicker">Leibniz-Montessori-Gymnasium · Düsseldorf</div>
+      <h1>Das Herz<br>unserer Schule <em>rechnet</em></h1>
+      <p class="sub">Willkommen bei LMG INFORMATIK — Technik, Informatik und Making am
+        Leibniz-Montessori-Gymnasium. Unser Logo sitzt da, wo es hingehört: im Sockel.</p>
+    </div>
+  </div>
+</section>
+
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x06090f, 12, 30);
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+camera.position.set(3.2, 3.4, 4.6);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.7;
+controls.minDistance = 1.2;
+controls.maxDistance = 14;
+controls.maxPolarAngle = Math.PI * 0.52;
+
+// lights
+scene.add(new THREE.AmbientLight(0x445577, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(4, 8, 5);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x3d6fd6, 1.6);
+rim.position.set(-6, 3, -4);
+scene.add(rim);
+const warm = new THREE.PointLight(0xf08a2c, 14, 10);
+warm.position.set(0, 2.2, 0);
+scene.add(warm);
+
+let mixer = null;
+const clock = new THREE.Clock();
+const loaderEl = document.getElementById('loader');
+const barfill = document.getElementById('barfill');
+
+const gltfLoader = new GLTFLoader();
+const draco = new DRACOLoader();
+draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+gltfLoader.setDRACOLoader(draco);
+gltfLoader.load('motherboard_logo.glb',
+  (gltf) => {
+    const model = gltf.scene;
+    scene.add(model);
+
+    // center the board, aim controls at the CPU (LogoRoot)
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    model.position.sub(center);
+
+    const logo = model.getObjectByName('LogoRoot');
+    if (logo) {
+      const p = new THREE.Vector3();
+      logo.getWorldPosition(p);
+      controls.target.copy(p);
+    }
+
+    mixer = new THREE.AnimationMixer(model);
+    for (const clip of gltf.animations) {
+      const action = mixer.clipAction(clip);
+      action.setLoop(THREE.LoopRepeat);
+      action.play();
+    }
+
+    loaderEl.classList.add('done');
+  },
+  (xhr) => {
+    if (xhr.total) barfill.style.width = (xhr.loaded / xhr.total * 100) + '%';
+  },
+  (err) => {
+    loaderEl.firstElementChild.textContent = 'FEHLER BEIM LADEN — Konsole prüfen';
+    console.error(err);
+  }
+);
+
+function resize() {
+  const w = canvas.clientWidth || innerWidth;
+  const h = canvas.clientHeight || innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  if (mixer) mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
