@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lehrer-Dashboard — LMG INFORMATIK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06090f;
+    --panel: #0b1220;
+    --line: #1b2a42;
+    --blue: #3d6fd6;
+    --blue-bright: #6ea0ff;
+    --orange: #f08a2c;
+    --cream: #f2e9d8;
+    --text: #c8d4e8;
+    --dim: #5d7294;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Chakra Petch', sans-serif;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: clamp(1.2rem, 3vw, 2.5rem);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-weight: 700; font-size: 1.05rem; letter-spacing: .28em; color: var(--cream); }
+  .brand span { color: var(--orange); }
+  .who {
+    font-family: 'IBM Plex Mono', monospace; font-size: .68rem; color: var(--dim);
+    text-align: right; line-height: 1.7;
+  }
+  .who b { color: var(--blue-bright); font-weight: 500; }
+  #logoutBtn {
+    cursor: pointer; margin-top: .5rem;
+    font-family: 'IBM Plex Mono', monospace; font-size: .65rem; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--dim); background: transparent;
+    border: 1px solid var(--line); border-radius: 4px; padding: .4em 1em;
+  }
+  #logoutBtn:hover { border-color: var(--orange); color: var(--orange); }
+
+  main { max-width: 900px; margin: 0 auto; padding: clamp(1.2rem, 3vw, 2.5rem); }
+  .section-title {
+    font-weight: 700; font-size: 1.05rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--cream); margin-bottom: 1.2rem;
+  }
+  .crumbs {
+    font-family: 'IBM Plex Mono', monospace; font-size: .68rem; letter-spacing: .1em;
+    color: var(--dim); margin-bottom: 1.4rem;
+  }
+  .crumbs span { cursor: pointer; }
+  .crumbs span:hover { color: var(--orange); }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem; margin-bottom: 1rem;
+  }
+  .tile {
+    cursor: pointer; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 1.6rem; transition: border-color .2s;
+  }
+  .tile:hover { border-color: var(--orange); }
+  .tile-title { font-weight: 600; font-size: 1.05rem; color: var(--cream); margin-bottom: .3rem; }
+  .tile-sub { font-family: 'IBM Plex Mono', monospace; font-size: .65rem; color: var(--dim); letter-spacing: .1em; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
+  th, td { text-align: left; padding: .7em .8em; border-bottom: 1px solid var(--line); font-size: .88rem; }
+  th { font-family: 'IBM Plex Mono', monospace; font-size: .62rem; letter-spacing: .15em; text-transform: uppercase; color: var(--dim); }
+  .progress-bar { width: 100px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: .6em; }
+  .progress-bar i { display: block; height: 100%; background: var(--blue-bright); }
+
+  .submission-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 1.2rem 1.4rem; margin-bottom: 1rem;
+  }
+  .submission-meta { font-family: 'IBM Plex Mono', monospace; font-size: .65rem; color: var(--dim); letter-spacing: .1em; margin-bottom: .5rem; }
+  .submission-answer { font-size: .92rem; margin-bottom: .9rem; line-height: 1.5; }
+  .grade-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  .grade-row input[type=text] {
+    background: var(--bg); color: var(--cream); border: 1px solid var(--line); border-radius: 4px;
+    font-family: 'Chakra Petch', sans-serif; font-size: .9rem; padding: .5em .7em;
+  }
+  .grade-row input.grade-num { width: 70px; }
+  .grade-row input.feedback-text { flex: 1; min-width: 180px; }
+  .grade-btn {
+    cursor: pointer; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: .8rem;
+    letter-spacing: .1em; text-transform: uppercase; color: #06090f; background: var(--orange);
+    border: none; border-radius: 4px; padding: .55em 1.2em;
+  }
+  .grade-btn:hover { background: var(--blue-bright); }
+  .empty { color: var(--dim); font-family: 'IBM Plex Mono', monospace; font-size: .85rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">LMG <span>INFORMATIK</span></div>
+  <div class="who">
+    <span id="whoName">…</span><br>
+    <button id="logoutBtn" type="button">Abmelden</button>
+  </div>
+</header>
+
+<main>
+  <div class="crumbs" id="crumbs"></div>
+  <div id="view"></div>
+</main>
+
+<script type="module">
+import { supabase, guardPage } from '../assets/supabase-client.js';
+
+const session = await guardPage('teacher');
+if (session) {
+  const { data: teacher } = await supabase
+    .from('teachers').select('display_name').eq('id', session.user.id).single();
+  document.getElementById('whoName').textContent = teacher.display_name;
+
+  const view = document.getElementById('view');
+  const crumbs = document.getElementById('crumbs');
+
+  const GRADES = [
+    { grade: 6, label: 'Klassen 6' },
+    { grade: 9, label: 'Kurs 9' },
+    { grade: 10, label: 'Kurs 10' },
+  ];
+
+  function setCrumbs(items) {
+    crumbs.innerHTML = items.map((it, i) =>
+      `<span data-i="${i}">${it.label}</span>${i < items.length - 1 ? ' / ' : ''}`
+    ).join('');
+    crumbs.querySelectorAll('span').forEach(el => {
+      el.addEventListener('click', () => items[+el.dataset.i].action());
+    });
+  }
+
+  async function showGrades() {
+    setCrumbs([{ label: 'Übersicht', action: showGrades }]);
+    view.innerHTML = '<div class="section-title">Klassen & Kurse</div><div class="grid" id="gradeGrid"></div>';
+    const grid = document.getElementById('gradeGrid');
+    for (const g of GRADES) {
+      const { count } = await supabase
+        .from('classes').select('id', { count: 'exact', head: true }).eq('grade', g.grade);
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.innerHTML = `<div class="tile-title">${g.label}</div><div class="tile-sub">${count ?? 0} Klasse(n)/Kurs(e)</div>`;
+      tile.addEventListener('click', () => showClasses(g));
+      grid.appendChild(tile);
+    }
+  }
+
+  async function showClasses(g) {
+    setCrumbs([{ label: 'Übersicht', action: showGrades }, { label: g.label, action: () => showClasses(g) }]);
+    const { data: classes } = await supabase
+      .from('classes').select('id, name, capacity').eq('grade', g.grade).order('name');
+
+    if (!classes || classes.length === 0) {
+      view.innerHTML = '<div class="section-title">' + g.label + '</div><p class="empty">Noch keine Klasse/kein Kurs angelegt.</p>';
+      return;
+    }
+
+    view.innerHTML = '<div class="section-title">' + g.label + '</div><div class="grid" id="classGrid"></div>';
+    const grid = document.getElementById('classGrid');
+    for (const c of classes) {
+      const { count } = await supabase
+        .from('students').select('id', { count: 'exact', head: true }).eq('class_id', c.id);
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.innerHTML = `<div class="tile-title">${c.name}</div><div class="tile-sub">${count ?? 0} / ${c.capacity} Schüler</div>`;
+      tile.addEventListener('click', () => showClassDetail(g, c));
+      grid.appendChild(tile);
+    }
+  }
+
+  async function showClassDetail(g, c) {
+    setCrumbs([
+      { label: 'Übersicht', action: showGrades },
+      { label: g.label, action: () => showClasses(g) },
+      { label: c.name, action: () => showClassDetail(g, c) },
+    ]);
+
+    const { data: students } = await supabase
+      .from('students').select('id, display_name').eq('class_id', c.id).order('display_name');
+
+    const { count: totalTasks } = await supabase
+      .from('tasks').select('id, topics!inner(grade)', { count: 'exact', head: true }).eq('topics.grade', g.grade);
+
+    const { data: submissions } = await supabase
+      .from('submissions')
+      .select('id, student_id, task_id, answer_text, status, grade, feedback, tasks(title)')
+      .in('student_id', (students ?? []).map(s => s.id));
+
+    const byStudent = {};
+    for (const s of submissions ?? []) {
+      (byStudent[s.student_id] ??= []).push(s);
+    }
+
+    let html = '<div class="section-title">Schüler & Fortschritt</div><table><tr><th>Name</th><th>Fortschritt</th></tr>';
+    for (const s of students ?? []) {
+      const done = (byStudent[s.id] ?? []).length;
+      const pct = totalTasks ? Math.round((done / totalTasks) * 100) : 0;
+      html += `<tr><td>${s.display_name}</td><td><span class="progress-bar"><i style="width:${pct}%"></i></span>${done} / ${totalTasks ?? 0}</td></tr>`;
+    }
+    html += '</table>';
+
+    const pending = (submissions ?? []).filter(s => s.status !== 'graded');
+    html += '<div class="section-title">Einreichungen zur Bewertung</div><div id="pendingList"></div>';
+    view.innerHTML = html;
+
+    const pendingList = document.getElementById('pendingList');
+    if (pending.length === 0) {
+      pendingList.innerHTML = '<p class="empty">Keine offenen Einreichungen.</p>';
+    } else {
+      for (const sub of pending) {
+        const student = (students ?? []).find(s => s.id === sub.student_id);
+        const card = document.createElement('div');
+        card.className = 'submission-card';
+        card.innerHTML = `
+          <div class="submission-meta">${student?.display_name ?? '?'} — ${sub.tasks?.title ?? ''}</div>
+          <div class="submission-answer">${sub.answer_text ?? '<i>(keine Antwort)</i>'}</div>
+          <div class="grade-row">
+            <input type="text" class="grade-num" placeholder="Note">
+            <input type="text" class="feedback-text" placeholder="Feedback">
+            <button class="grade-btn" type="button">Bewerten</button>
+          </div>
+        `;
+        card.querySelector('.grade-btn').addEventListener('click', async () => {
+          const gradeVal = card.querySelector('.grade-num').value;
+          const feedbackVal = card.querySelector('.feedback-text').value;
+          await supabase.from('submissions').update({
+            status: 'graded',
+            grade: gradeVal ? Number(gradeVal) : null,
+            feedback: feedbackVal || null,
+            graded_at: new Date().toISOString()
+          }).eq('id', sub.id);
+          card.remove();
+        });
+        pendingList.appendChild(card);
+      }
+    }
+  }
+
+  showGrades();
+}
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await supabase.auth.signOut();
+  location.href = '/';
+});
+</script>
+</body>
+</html>

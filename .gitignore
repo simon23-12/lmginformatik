@@ -1,0 +1,11 @@
+.mcp.json
+node_modules/
+
+# Eingescannte/urheberrechtlich geschützte Schulbuch-Inhalte: nie ins Repo
+Klasse 6 Buch/
+Klasse 9 Buch/
+Klasse 10 Buch/
+Kurs 9 Buch/
+Kurs 10 Buch/
+Curriculum 9/
+Curriculum 10/

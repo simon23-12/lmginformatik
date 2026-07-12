@@ -123,6 +123,11 @@
     letter-spacing: .15em; color: var(--dim);
   }
   #loginForm .back:hover { color: var(--cream); }
+  .login-error {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .65rem; letter-spacing: .05em; color: var(--orange);
+    min-height: 1.2em; margin: -.6rem 0 .8rem;
+  }
 
   /* staggered load-in */
   .hud-top {
@@ -179,6 +184,7 @@
         <input id="user" name="user" type="text" required>
         <label for="pass">Passwort</label>
         <input id="pass" name="pass" type="password" required>
+        <div id="loginError" class="login-error"></div>
         <button type="submit" class="submit">Anmelden</button>
         <button type="button" class="back" id="backBtn">← zurück</button>
       </form>
@@ -200,6 +206,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { loginWithUsername, redirectByRole } from './assets/supabase-client.js';
+
+// falls schon eingeloggt, direkt zum passenden Dashboard
+redirectByRole();
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -310,12 +320,22 @@ backBtn.addEventListener('click', () => {
   controls.enabled = true;
   controls.autoRotate = true;
 });
-loginForm.addEventListener('submit', (e) => {
+const loginError = document.getElementById('loginError');
+loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  // TODO: echtes Login-Backend anbinden
+  loginError.textContent = '';
   const btn = loginForm.querySelector('.submit');
-  btn.textContent = 'Backend folgt …';
-  setTimeout(() => (btn.textContent = 'Anmelden'), 1600);
+  const user = document.getElementById('user').value;
+  const pass = document.getElementById('pass').value;
+  btn.textContent = 'Prüfe …';
+  const { error } = await loginWithUsername(user, pass);
+  if (error) {
+    btn.textContent = 'Anmelden';
+    loginError.textContent = 'Benutzername oder Passwort falsch.';
+    return;
+  }
+  btn.textContent = 'Weiterleitung …';
+  await redirectByRole();
 });
 
 renderer.setAnimationLoop(() => {
