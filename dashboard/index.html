@@ -103,7 +103,7 @@
 </main>
 
 <script type="module">
-import { supabase, guardPage } from '../assets/supabase-client.js';
+import { supabase, guardPage, SITE_ROOT } from '../assets/supabase-client.js';
 
 const session = await guardPage('student');
 if (session) {
@@ -177,7 +177,7 @@ if (session) {
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
   await supabase.auth.signOut();
-  location.href = '/';
+  location.href = SITE_ROOT;
 });
 </script>
 </body>
