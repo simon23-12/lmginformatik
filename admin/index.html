@@ -109,6 +109,60 @@
   .eval-dot.yellow { background: var(--yellow); }
   .eval-dot.red { background: var(--red); }
   .empty { color: var(--dim); font-family: 'IBM Plex Mono', monospace; font-size: .85rem; }
+
+  /* Aufgabenplaner */
+  .page-group { margin-bottom: 1.6rem; }
+  .page-group-head {
+    display: flex; align-items: baseline; gap: .7em; margin-bottom: .6rem;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .page-num {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: .2em .6em; font-size: .75rem; color: var(--orange); letter-spacing: .05em;
+  }
+  .page-group-title { font-weight: 600; font-size: .92rem; color: var(--cream); }
+  .plan-card {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: .9rem 1.2rem; margin-bottom: .6rem;
+  }
+  .plan-card.is-live { border-color: var(--green); }
+  .plan-main { flex: 1; min-width: 0; }
+  .plan-title-row { display: flex; align-items: center; gap: .6em; margin-bottom: .3rem; }
+  .plan-title { font-weight: 600; font-size: .92rem; color: var(--cream); }
+  .diff-dot {
+    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+    border: 1.5px solid var(--blue-bright); box-sizing: border-box;
+  }
+  .diff-dot[data-d="1"] { background: transparent; }
+  .diff-dot[data-d="2"] { background: linear-gradient(to top, var(--blue-bright) 50%, transparent 50%); }
+  .diff-dot[data-d="3"] { background: var(--blue-bright); }
+  .diff-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: .6rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  .plan-content {
+    font-size: .82rem; color: var(--text); line-height: 1.4;
+    white-space: pre-line; max-height: 3.6em; overflow: hidden;
+  }
+  .toggle-wrap { display: flex; flex-direction: column; align-items: center; gap: .3em; flex-shrink: 0; }
+  .toggle-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: .58rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  .toggle-wrap.on .toggle-label { color: var(--green); }
+  .switch { position: relative; width: 42px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch-track {
+    position: absolute; inset: 0; cursor: pointer; background: var(--line);
+    border-radius: 22px; transition: background .2s;
+  }
+  .switch-track::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    background: var(--cream); border-radius: 50%; transition: transform .2s;
+  }
+  .switch input:checked + .switch-track { background: var(--green); }
+  .switch input:checked + .switch-track::before { transform: translateX(20px); }
 </style>
 </head>
 <body>
@@ -180,6 +234,13 @@ if (session) {
 
     view.innerHTML = '<div class="section-title">' + g.label + '</div><div class="grid" id="classGrid"></div>';
     const grid = document.getElementById('classGrid');
+
+    const plannerTile = document.createElement('div');
+    plannerTile.className = 'tile';
+    plannerTile.innerHTML = `<div class="tile-title">📋 Aufgaben planen</div><div class="tile-sub">nach Seite &amp; Schwierigkeit freischalten</div>`;
+    plannerTile.addEventListener('click', () => showTaskPlanner(g));
+    grid.appendChild(plannerTile);
+
     for (const c of classes) {
       const { count } = await supabase
         .from('students').select('id', { count: 'exact', head: true }).eq('class_id', c.id);
@@ -188,6 +249,100 @@ if (session) {
       tile.innerHTML = `<div class="tile-title">${c.name}</div><div class="tile-sub">${count ?? 0} / ${c.capacity} Schüler</div>`;
       tile.addEventListener('click', () => showClassDetail(g, c));
       grid.appendChild(tile);
+    }
+  }
+
+  const DIFF_LABEL = { 1: 'leicht', 2: 'mittel', 3: 'schwer' };
+
+  async function showTaskPlanner(g) {
+    setCrumbs([
+      { label: 'Übersicht', action: showGrades },
+      { label: g.label, action: () => showClasses(g) },
+      { label: 'Aufgaben planen', action: () => showTaskPlanner(g) },
+    ]);
+
+    view.innerHTML = '<div class="section-title">Aufgaben planen — ' + g.label + '</div><div id="planList"></div>';
+    const planList = document.getElementById('planList');
+
+    const { data: tasks, error } = await supabase
+      .from('tasks')
+      .select('id, title, content, page_number, section_title, difficulty, published, topics!inner(grade)')
+      .eq('topics.grade', g.grade)
+      .order('page_number', { ascending: true, nullsFirst: false })
+      .order('order_index', { ascending: true });
+
+    if (error) {
+      planList.innerHTML = '<p class="empty">Fehler beim Laden: ' + error.message + '</p>';
+      return;
+    }
+    if (!tasks || tasks.length === 0) {
+      planList.innerHTML = '<p class="empty">Noch keine Aufgaben für diese Stufe angelegt.</p>';
+      return;
+    }
+
+    // Nach Seite gruppieren, Reihenfolge bleibt erhalten (bereits sortiert)
+    const groups = [];
+    for (const t of tasks) {
+      const key = `${t.page_number ?? ''}|${t.section_title ?? ''}`;
+      let group = groups.find(gr => gr.key === key);
+      if (!group) { group = { key, page: t.page_number, title: t.section_title, tasks: [] }; groups.push(group); }
+      group.tasks.push(t);
+    }
+
+    planList.innerHTML = '';
+    for (const group of groups) {
+      const section = document.createElement('div');
+      section.className = 'page-group';
+      section.innerHTML = `
+        <div class="page-group-head">
+          ${group.page ? `<span class="page-num">S. ${group.page}</span>` : ''}
+          <span class="page-group-title">${group.title ?? 'Ohne Seitenangabe'}</span>
+        </div>
+        <div class="page-group-body"></div>
+      `;
+      const body = section.querySelector('.page-group-body');
+
+      for (const task of group.tasks) {
+        const card = document.createElement('div');
+        card.className = 'plan-card' + (task.published ? ' is-live' : '');
+        card.innerHTML = `
+          <div class="plan-main">
+            <div class="plan-title-row">
+              <span class="diff-dot" data-d="${task.difficulty ?? ''}" title="${DIFF_LABEL[task.difficulty] ?? 'unbekannt'}"></span>
+              <span class="diff-label">${DIFF_LABEL[task.difficulty] ?? '–'}</span>
+              <span class="plan-title">${task.title}</span>
+            </div>
+            <div class="plan-content">${task.content}</div>
+          </div>
+          <label class="toggle-wrap ${task.published ? 'on' : ''}">
+            <span class="toggle-label">${task.published ? 'Live' : 'Aus'}</span>
+            <span class="switch">
+              <input type="checkbox" ${task.published ? 'checked' : ''}>
+              <span class="switch-track"></span>
+            </span>
+          </label>
+        `;
+        const checkbox = card.querySelector('input[type=checkbox]');
+        const toggleWrap = card.querySelector('.toggle-wrap');
+        const toggleLabel = card.querySelector('.toggle-label');
+        checkbox.addEventListener('change', async () => {
+          const newVal = checkbox.checked;
+          checkbox.disabled = true;
+          const { error: updErr } = await supabase.from('tasks').update({ published: newVal }).eq('id', task.id);
+          checkbox.disabled = false;
+          if (updErr) {
+            checkbox.checked = !newVal;
+            alert('Konnte Status nicht ändern: ' + updErr.message);
+            return;
+          }
+          task.published = newVal;
+          card.classList.toggle('is-live', newVal);
+          toggleWrap.classList.toggle('on', newVal);
+          toggleLabel.textContent = newVal ? 'Live' : 'Aus';
+        });
+        body.appendChild(card);
+      }
+      planList.appendChild(section);
     }
   }
 

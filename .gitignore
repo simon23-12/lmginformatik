@@ -1,5 +1,7 @@
 .mcp.json
 node_modules/
+.DS_Store
+Testaccounts.rtf
 
 # Eingescannte/urheberrechtlich geschützte Schulbuch-Inhalte: nie ins Repo
 Klasse 6 Buch/
@@ -9,3 +11,4 @@ Kurs 9 Buch/
 Kurs 10 Buch/
 Curriculum 9/
 Curriculum 10/
+Kapitel */

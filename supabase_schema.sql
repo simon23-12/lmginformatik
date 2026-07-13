@@ -37,6 +37,10 @@ create table tasks (
   title text not null,
   content text not null,        -- Aufgabentext
   task_type text not null default 'text', -- 'text', 'multiple_choice', ...
+  page_number int,              -- Buchseite, für Sortierung/Planung im Lehrer-Bereich
+  section_title text,           -- Überschrift des Buchabschnitts (z.B. "Informatiksysteme")
+  difficulty smallint check (difficulty in (1,2,3)), -- 1=leicht, 2=mittel, 3=schwer (Kreis-Symbol im Buch)
+  published boolean not null default true, -- Lehrer schaltet Aufgaben passend zur Unterrichtsplanung frei
   created_at timestamptz default now()
 );
 
@@ -61,11 +65,19 @@ alter table topics enable row level security;
 alter table tasks enable row level security;
 alter table submissions enable row level security;
 
--- Schüler dürfen Themen/Aufgaben lesen (angemeldet)
+-- Schüler dürfen Themen lesen (angemeldet)
 create policy "authenticated read topics" on topics
   for select to authenticated using (true);
-create policy "authenticated read tasks" on tasks
-  for select to authenticated using (true);
+
+-- Aufgaben: Schüler sehen nur freigeschaltete (published), Lehrer sehen/ändern alles
+create policy "read tasks" on tasks
+  for select to authenticated using (
+    published = true or exists (select 1 from teachers t where t.id = auth.uid())
+  );
+create policy "teachers update tasks" on tasks
+  for update to authenticated
+  using (exists (select 1 from teachers t where t.id = auth.uid()))
+  with check (exists (select 1 from teachers t where t.id = auth.uid()));
 
 -- Schüler sehen nur ihren eigenen Datensatz
 create policy "own student row" on students
