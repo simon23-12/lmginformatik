@@ -119,6 +119,13 @@
   .dots { display: inline-block; margin-left: .6em; vertical-align: middle; }
 
   /* Aufgabenplaner */
+  .topic-select {
+    display: block; width: 100%; max-width: 420px; margin-bottom: 1.8rem;
+    background: var(--panel); color: var(--cream); border: 1px solid var(--line); border-radius: 6px;
+    font-family: 'Chakra Petch', sans-serif; font-size: .92rem; padding: .7em .9em;
+    cursor: pointer; outline: none;
+  }
+  .topic-select:focus { border-color: var(--orange); }
   .page-group { margin-bottom: 1.6rem; }
   .page-group-head {
     display: flex; align-items: baseline; gap: .7em; margin-bottom: .6rem;
@@ -243,97 +250,120 @@ if (session) {
       { label: 'Aufgaben planen', action: () => showTaskPlanner(c) },
     ]);
 
-    view.innerHTML = '<div class="section-title">Aufgaben planen — ' + c.name + '</div><div id="planList"></div>';
+    const { data: topics } = await supabase
+      .from('topics').select('id, title, order_index').eq('grade', c.grade).order('order_index');
+
+    if (!topics || topics.length === 0) {
+      view.innerHTML = '<div class="section-title">Aufgaben planen — ' + c.name + '</div><p class="empty">Noch keine Kapitel für diese Stufe angelegt.</p>';
+      return;
+    }
+
+    view.innerHTML = `
+      <div class="section-title">Aufgaben planen — ${c.name}</div>
+      <select id="topicSelect" class="topic-select">
+        ${topics.map(t => `<option value="${t.id}">${t.order_index}. ${t.title}</option>`).join('')}
+      </select>
+      <div id="planList"></div>
+    `;
+    const select = document.getElementById('topicSelect');
     const planList = document.getElementById('planList');
 
-    const { data: tasks, error } = await supabase
-      .from('tasks')
-      .select('id, title, content, page_number, section_title, difficulty, topics!inner(grade)')
-      .eq('topics.grade', c.grade)
-      .order('page_number', { ascending: true, nullsFirst: false })
-      .order('order_index', { ascending: true });
+    async function loadTopic(topicId) {
+      planList.innerHTML = '<p class="empty">Lade …</p>';
 
-    if (error) {
-      planList.innerHTML = '<p class="empty">Fehler beim Laden: ' + error.message + '</p>';
-      return;
-    }
-    if (!tasks || tasks.length === 0) {
-      planList.innerHTML = '<p class="empty">Noch keine Aufgaben für diese Stufe angelegt.</p>';
-      return;
-    }
+      const { data: tasks, error } = await supabase
+        .from('tasks')
+        .select('id, title, content, page_number, section_title, difficulty, order_index')
+        .eq('topic_id', topicId)
+        .order('page_number', { ascending: true, nullsFirst: false })
+        .order('order_index', { ascending: true });
 
-    // Freischaltungsstatus ist pro Klasse gespeichert (unterschiedliches Tempo je Klasse)
-    const { data: statusRows } = await supabase
-      .from('class_task_status').select('task_id, published').eq('class_id', c.id);
-    const publishedMap = Object.fromEntries((statusRows ?? []).map(r => [r.task_id, r.published]));
-    for (const t of tasks) t.published = publishedMap[t.id] ?? false;
-
-    // Nach Seite gruppieren, Reihenfolge bleibt erhalten (bereits sortiert)
-    const groups = [];
-    for (const t of tasks) {
-      const key = `${t.page_number ?? ''}|${t.section_title ?? ''}`;
-      let group = groups.find(gr => gr.key === key);
-      if (!group) { group = { key, page: t.page_number, title: t.section_title, tasks: [] }; groups.push(group); }
-      group.tasks.push(t);
-    }
-
-    planList.innerHTML = '';
-    for (const group of groups) {
-      const section = document.createElement('div');
-      section.className = 'page-group';
-      section.innerHTML = `
-        <div class="page-group-head">
-          ${group.page ? `<span class="page-num">S. ${group.page}</span>` : ''}
-          <span class="page-group-title">${group.title ?? 'Ohne Seitenangabe'}</span>
-        </div>
-        <div class="page-group-body"></div>
-      `;
-      const body = section.querySelector('.page-group-body');
-
-      for (const task of group.tasks) {
-        const card = document.createElement('div');
-        card.className = 'plan-card' + (task.published ? ' is-live' : '');
-        card.innerHTML = `
-          <div class="plan-main">
-            <div class="plan-title-row">
-              <span class="diff-dot" data-d="${task.difficulty ?? ''}" title="${DIFF_LABEL[task.difficulty] ?? 'unbekannt'}"></span>
-              <span class="diff-label">${DIFF_LABEL[task.difficulty] ?? '–'}</span>
-              <span class="plan-title">${task.title}</span>
-            </div>
-            <div class="plan-content">${task.content}</div>
-          </div>
-          <label class="toggle-wrap ${task.published ? 'on' : ''}">
-            <span class="toggle-label">${task.published ? 'Live' : 'Aus'}</span>
-            <span class="switch">
-              <input type="checkbox" ${task.published ? 'checked' : ''}>
-              <span class="switch-track"></span>
-            </span>
-          </label>
-        `;
-        const checkbox = card.querySelector('input[type=checkbox]');
-        const toggleWrap = card.querySelector('.toggle-wrap');
-        const toggleLabel = card.querySelector('.toggle-label');
-        checkbox.addEventListener('change', async () => {
-          const newVal = checkbox.checked;
-          checkbox.disabled = true;
-          const { error: updErr } = await supabase.from('class_task_status').upsert({
-            class_id: c.id, task_id: task.id, published: newVal, updated_at: new Date().toISOString()
-          }, { onConflict: 'class_id,task_id' });
-          checkbox.disabled = false;
-          if (updErr) {
-            checkbox.checked = !newVal;
-            alert('Konnte Status nicht ändern: ' + updErr.message);
-            return;
-          }
-          task.published = newVal;
-          card.classList.toggle('is-live', newVal);
-          toggleWrap.classList.toggle('on', newVal);
-          toggleLabel.textContent = newVal ? 'Live' : 'Aus';
-        });
-        body.appendChild(card);
+      if (error) {
+        planList.innerHTML = '<p class="empty">Fehler beim Laden: ' + error.message + '</p>';
+        return;
       }
-      planList.appendChild(section);
+      if (!tasks || tasks.length === 0) {
+        planList.innerHTML = '<p class="empty">Für dieses Kapitel gibt es noch keine Aufgaben.</p>';
+        return;
+      }
+
+      // Freischaltungsstatus ist pro Klasse gespeichert (unterschiedliches Tempo je Klasse)
+      const { data: statusRows } = await supabase
+        .from('class_task_status').select('task_id, published')
+        .eq('class_id', c.id).in('task_id', tasks.map(t => t.id));
+      const publishedMap = Object.fromEntries((statusRows ?? []).map(r => [r.task_id, r.published]));
+      for (const t of tasks) t.published = publishedMap[t.id] ?? false;
+
+      // Nach Seite gruppieren, Reihenfolge bleibt erhalten (bereits sortiert)
+      const groups = [];
+      for (const t of tasks) {
+        const key = `${t.page_number ?? ''}|${t.section_title ?? ''}`;
+        let group = groups.find(gr => gr.key === key);
+        if (!group) { group = { key, page: t.page_number, title: t.section_title, tasks: [] }; groups.push(group); }
+        group.tasks.push(t);
+      }
+
+      planList.innerHTML = '';
+      for (const group of groups) {
+        const section = document.createElement('div');
+        section.className = 'page-group';
+        section.innerHTML = `
+          <div class="page-group-head">
+            ${group.page ? `<span class="page-num">S. ${group.page}</span>` : ''}
+            <span class="page-group-title">${group.title ?? 'Ohne Seitenangabe'}</span>
+          </div>
+          <div class="page-group-body"></div>
+        `;
+        const body = section.querySelector('.page-group-body');
+
+        for (const task of group.tasks) {
+          const card = document.createElement('div');
+          card.className = 'plan-card' + (task.published ? ' is-live' : '');
+          card.innerHTML = `
+            <div class="plan-main">
+              <div class="plan-title-row">
+                <span class="diff-dot" data-d="${task.difficulty ?? ''}" title="${DIFF_LABEL[task.difficulty] ?? 'unbekannt'}"></span>
+                <span class="diff-label">${DIFF_LABEL[task.difficulty] ?? '–'}</span>
+                <span class="plan-title">${task.title}</span>
+              </div>
+              <div class="plan-content">${task.content}</div>
+            </div>
+            <label class="toggle-wrap ${task.published ? 'on' : ''}">
+              <span class="toggle-label">${task.published ? 'Live' : 'Aus'}</span>
+              <span class="switch">
+                <input type="checkbox" ${task.published ? 'checked' : ''}>
+                <span class="switch-track"></span>
+              </span>
+            </label>
+          `;
+          const checkbox = card.querySelector('input[type=checkbox]');
+          const toggleWrap = card.querySelector('.toggle-wrap');
+          const toggleLabel = card.querySelector('.toggle-label');
+          checkbox.addEventListener('change', async () => {
+            const newVal = checkbox.checked;
+            checkbox.disabled = true;
+            const { error: updErr } = await supabase.from('class_task_status').upsert({
+              class_id: c.id, task_id: task.id, published: newVal, updated_at: new Date().toISOString()
+            }, { onConflict: 'class_id,task_id' });
+            checkbox.disabled = false;
+            if (updErr) {
+              checkbox.checked = !newVal;
+              alert('Konnte Status nicht ändern: ' + updErr.message);
+              return;
+            }
+            task.published = newVal;
+            card.classList.toggle('is-live', newVal);
+            toggleWrap.classList.toggle('on', newVal);
+            toggleLabel.textContent = newVal ? 'Live' : 'Aus';
+          });
+          body.appendChild(card);
+        }
+        planList.appendChild(section);
+      }
     }
+
+    select.addEventListener('change', () => loadTopic(select.value));
+    loadTopic(select.value);
   }
 
   async function showClassDetail(c) {
