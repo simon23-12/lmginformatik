@@ -200,12 +200,6 @@ if (session) {
   const view = document.getElementById('view');
   const crumbs = document.getElementById('crumbs');
 
-  const GRADES = [
-    { grade: 6, label: 'Klassen 6' },
-    { grade: 9, label: 'Kurs 9' },
-    { grade: 10, label: 'Kurs 10' },
-  ];
-
   function setCrumbs(items) {
     crumbs.innerHTML = items.map((it, i) =>
       `<span data-i="${i}">${it.label}</span>${i < items.length - 1 ? ' / ' : ''}`
@@ -215,67 +209,47 @@ if (session) {
     });
   }
 
-  async function showGrades() {
-    setCrumbs([{ label: 'Übersicht', action: showGrades }]);
-    view.innerHTML = '<div class="section-title">Klassen & Kurse</div><div class="grid" id="gradeGrid"></div>';
-    const grid = document.getElementById('gradeGrid');
-    for (const g of GRADES) {
-      const { count } = await supabase
-        .from('classes').select('id', { count: 'exact', head: true }).eq('grade', g.grade);
-      const tile = document.createElement('div');
-      tile.className = 'tile';
-      tile.innerHTML = `<div class="tile-title">${g.label}</div><div class="tile-sub">${count ?? 0} Klasse(n)/Kurs(e)</div>`;
-      tile.addEventListener('click', () => showClasses(g));
-      grid.appendChild(tile);
-    }
-  }
-
-  async function showClasses(g) {
-    setCrumbs([{ label: 'Übersicht', action: showGrades }, { label: g.label, action: () => showClasses(g) }]);
-    const { data: classes } = await supabase
-      .from('classes').select('id, name, capacity').eq('grade', g.grade).order('name');
-
-    if (!classes || classes.length === 0) {
-      view.innerHTML = '<div class="section-title">' + g.label + '</div><p class="empty">Noch keine Klasse/kein Kurs angelegt.</p>';
-      return;
-    }
-
-    view.innerHTML = '<div class="section-title">' + g.label + '</div><div class="grid" id="classGrid"></div>';
+  async function showOverview() {
+    setCrumbs([{ label: 'Übersicht', action: showOverview }]);
+    view.innerHTML = '<div class="section-title">Klassen & Kurse</div><div class="grid" id="classGrid"></div>';
     const grid = document.getElementById('classGrid');
 
-    const plannerTile = document.createElement('div');
-    plannerTile.className = 'tile';
-    plannerTile.innerHTML = `<div class="tile-title">📋 Aufgaben planen</div><div class="tile-sub">nach Seite &amp; Schwierigkeit freischalten</div>`;
-    plannerTile.addEventListener('click', () => showTaskPlanner(g));
-    grid.appendChild(plannerTile);
+    const { data: classes } = await supabase
+      .from('classes').select('id, name, grade, type, capacity').order('grade').order('name');
+
+    if (!classes || classes.length === 0) {
+      view.innerHTML = '<div class="section-title">Klassen & Kurse</div><p class="empty">Noch keine Klasse/kein Kurs angelegt.</p>';
+      return;
+    }
 
     for (const c of classes) {
       const { count } = await supabase
         .from('students').select('id', { count: 'exact', head: true }).eq('class_id', c.id);
+      const kindLabel = c.type === 'kurs' ? 'Kurs' : 'Klasse';
       const tile = document.createElement('div');
       tile.className = 'tile';
-      tile.innerHTML = `<div class="tile-title">${c.name}</div><div class="tile-sub">${count ?? 0} / ${c.capacity} Schüler</div>`;
-      tile.addEventListener('click', () => showClassDetail(g, c));
+      tile.innerHTML = `<div class="tile-title">${c.name}</div><div class="tile-sub">${kindLabel} · Stufe ${c.grade} · ${count ?? 0} / ${c.capacity} Schüler</div>`;
+      tile.addEventListener('click', () => showClassDetail(c));
       grid.appendChild(tile);
     }
   }
 
   const DIFF_LABEL = { 1: 'leicht', 2: 'mittel', 3: 'schwer' };
 
-  async function showTaskPlanner(g) {
+  async function showTaskPlanner(c) {
     setCrumbs([
-      { label: 'Übersicht', action: showGrades },
-      { label: g.label, action: () => showClasses(g) },
-      { label: 'Aufgaben planen', action: () => showTaskPlanner(g) },
+      { label: 'Übersicht', action: showOverview },
+      { label: c.name, action: () => showClassDetail(c) },
+      { label: 'Aufgaben planen', action: () => showTaskPlanner(c) },
     ]);
 
-    view.innerHTML = '<div class="section-title">Aufgaben planen — ' + g.label + '</div><div id="planList"></div>';
+    view.innerHTML = '<div class="section-title">Aufgaben planen — ' + c.name + '</div><div id="planList"></div>';
     const planList = document.getElementById('planList');
 
     const { data: tasks, error } = await supabase
       .from('tasks')
-      .select('id, title, content, page_number, section_title, difficulty, published, topics!inner(grade)')
-      .eq('topics.grade', g.grade)
+      .select('id, title, content, page_number, section_title, difficulty, topics!inner(grade)')
+      .eq('topics.grade', c.grade)
       .order('page_number', { ascending: true, nullsFirst: false })
       .order('order_index', { ascending: true });
 
@@ -287,6 +261,12 @@ if (session) {
       planList.innerHTML = '<p class="empty">Noch keine Aufgaben für diese Stufe angelegt.</p>';
       return;
     }
+
+    // Freischaltungsstatus ist pro Klasse gespeichert (unterschiedliches Tempo je Klasse)
+    const { data: statusRows } = await supabase
+      .from('class_task_status').select('task_id, published').eq('class_id', c.id);
+    const publishedMap = Object.fromEntries((statusRows ?? []).map(r => [r.task_id, r.published]));
+    for (const t of tasks) t.published = publishedMap[t.id] ?? false;
 
     // Nach Seite gruppieren, Reihenfolge bleibt erhalten (bereits sortiert)
     const groups = [];
@@ -336,7 +316,9 @@ if (session) {
         checkbox.addEventListener('change', async () => {
           const newVal = checkbox.checked;
           checkbox.disabled = true;
-          const { error: updErr } = await supabase.from('tasks').update({ published: newVal }).eq('id', task.id);
+          const { error: updErr } = await supabase.from('class_task_status').upsert({
+            class_id: c.id, task_id: task.id, published: newVal, updated_at: new Date().toISOString()
+          }, { onConflict: 'class_id,task_id' });
           checkbox.disabled = false;
           if (updErr) {
             checkbox.checked = !newVal;
@@ -354,27 +336,30 @@ if (session) {
     }
   }
 
-  async function showClassDetail(g, c) {
+  async function showClassDetail(c) {
     setCrumbs([
-      { label: 'Übersicht', action: showGrades },
-      { label: g.label, action: () => showClasses(g) },
-      { label: c.name, action: () => showClassDetail(g, c) },
+      { label: 'Übersicht', action: showOverview },
+      { label: c.name, action: () => showClassDetail(c) },
     ]);
 
     const { data: students } = await supabase
       .from('students').select('id, display_name').eq('class_id', c.id).order('display_name');
 
     const { data: topics } = await supabase
-      .from('topics').select('id, title, order_index').eq('grade', g.grade).order('order_index');
+      .from('topics').select('id, title, order_index').eq('grade', c.grade).order('order_index');
 
-    const { data: publishedTasks } = await supabase
+    const { data: statusRows } = await supabase
+      .from('class_task_status').select('task_id, published').eq('class_id', c.id).eq('published', true);
+    const publishedIds = new Set((statusRows ?? []).map(r => r.task_id));
+
+    const { data: allTasks } = await supabase
       .from('tasks').select('id, topic_id, order_index, title')
-      .eq('published', true)
       .in('topic_id', (topics ?? []).map(t => t.id))
       .order('order_index');
+    const publishedTasks = (allTasks ?? []).filter(t => publishedIds.has(t.id));
 
     const tasksByTopic = {};
-    for (const t of publishedTasks ?? []) (tasksByTopic[t.topic_id] ??= []).push(t);
+    for (const t of publishedTasks) (tasksByTopic[t.topic_id] ??= []).push(t);
     const activeTopics = (topics ?? []).filter(t => (tasksByTopic[t.id] ?? []).length > 0);
 
     const { data: submissions } = await supabase
@@ -385,7 +370,15 @@ if (session) {
     const subByStudentTask = {};
     for (const s of submissions ?? []) subByStudentTask[`${s.student_id}|${s.task_id}`] = s;
 
-    let html = '<div class="section-title">Schüler & Fortschritt (nur freigeschaltete Aufgaben)</div>';
+    let html = `
+      <div class="grid" style="margin-bottom:2rem;">
+        <div class="tile" id="plannerTile">
+          <div class="tile-title">📋 Aufgaben planen</div>
+          <div class="tile-sub">für ${c.name} · nach Seite &amp; Schwierigkeit freischalten</div>
+        </div>
+      </div>
+    `;
+    html += '<div class="section-title">Schüler & Fortschritt (nur freigeschaltete Aufgaben)</div>';
     if (activeTopics.length === 0) {
       html += '<p class="empty">Noch keine Aufgaben freigeschaltet — siehe „Aufgaben planen".</p>';
     } else {
@@ -417,6 +410,8 @@ if (session) {
     const pending = (submissions ?? []).filter(s => s.status !== 'graded');
     html += '<div class="section-title">Einreichungen zur Bewertung</div><div id="pendingList"></div>';
     view.innerHTML = html;
+
+    document.getElementById('plannerTile').addEventListener('click', () => showTaskPlanner(c));
 
     const pendingList = document.getElementById('pendingList');
     if (pending.length === 0) {
@@ -457,7 +452,7 @@ if (session) {
     }
   }
 
-  showGrades();
+  showOverview();
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
