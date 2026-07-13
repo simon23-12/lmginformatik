@@ -173,16 +173,16 @@ if (session) {
   const view = document.getElementById('view');
   const crumbs = document.getElementById('crumbs');
 
-  const { data: topics } = await supabase
-    .from('topics')
-    .select('id, title, order_index, tasks(id, title, content, order_index, difficulty)')
-    .eq('grade', grade)
-    .order('order_index');
-
-  const { data: submissions } = await supabase
-    .from('submissions')
-    .select('task_id, answer_text, status, evaluation, feedback')
-    .eq('student_id', student.id);
+  // topics und submissions hängen beide nur vom Schüler ab, nicht voneinander -> parallel laden
+  const [{ data: topics }, { data: submissions }] = await Promise.all([
+    supabase.from('topics')
+      .select('id, title, order_index, tasks(id, title, content, order_index, difficulty)')
+      .eq('grade', grade)
+      .order('order_index'),
+    supabase.from('submissions')
+      .select('task_id, answer_text, status, evaluation, feedback')
+      .eq('student_id', student.id),
+  ]);
 
   const subByTask = Object.fromEntries((submissions ?? []).map(s => [s.task_id, s]));
 

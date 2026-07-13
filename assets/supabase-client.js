@@ -23,22 +23,16 @@ export async function loginWithUsername(username, password) {
   });
 }
 
-// Ermittelt die Rolle des eingeloggten Users ('teacher' | 'student' | null)
+// Ermittelt die Rolle des eingeloggten Users ('teacher' | 'student' | null).
+// Rolle ist vorher nicht bekannt (z.B. direkt nach Login) -> beide Tabellen
+// parallel statt nacheinander abfragen.
 export async function getRole(session) {
-  const { data: teacher } = await supabase
-    .from('teachers')
-    .select('id')
-    .eq('id', session.user.id)
-    .maybeSingle();
+  const [{ data: teacher }, { data: student }] = await Promise.all([
+    supabase.from('teachers').select('id').eq('id', session.user.id).maybeSingle(),
+    supabase.from('students').select('id').eq('id', session.user.id).maybeSingle(),
+  ]);
   if (teacher) return 'teacher';
-
-  const { data: student } = await supabase
-    .from('students')
-    .select('id')
-    .eq('id', session.user.id)
-    .maybeSingle();
   if (student) return 'student';
-
   return null;
 }
 
@@ -51,11 +45,14 @@ export async function redirectByRole() {
   else if (role === 'student') location.href = new URL('dashboard/', SITE_ROOT).href;
 }
 
-// Schützt eine Seite: leitet zu / zurück, falls keine Session oder falsche Rolle
+// Schützt eine Seite: leitet zu / zurück, falls keine Session oder falsche Rolle.
+// Die Rolle ist hier (anders als bei getRole) schon bekannt -> nur die eine
+// passende Tabelle abfragen statt beide nacheinander zu prüfen.
 export async function guardPage(requiredRole) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) { location.href = SITE_ROOT; return null; }
-  const role = await getRole(session);
-  if (role !== requiredRole) { location.href = SITE_ROOT; return null; }
+  const table = requiredRole === 'teacher' ? 'teachers' : 'students';
+  const { data: row } = await supabase.from(table).select('id').eq('id', session.user.id).maybeSingle();
+  if (!row) { location.href = SITE_ROOT; return null; }
   return session;
 }

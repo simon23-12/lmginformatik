@@ -200,12 +200,12 @@ import { supabase, guardPage, SITE_ROOT } from '../assets/supabase-client.js';
 
 const session = await guardPage('teacher');
 if (session) {
-  const { data: teacher } = await supabase
-    .from('teachers').select('display_name').eq('id', session.user.id).single();
-  document.getElementById('whoName').textContent = teacher.display_name;
-
   const view = document.getElementById('view');
   const crumbs = document.getElementById('crumbs');
+
+  // Anzeigename lädt nebenläufig -- die Übersicht muss nicht darauf warten
+  supabase.from('teachers').select('display_name').eq('id', session.user.id).single()
+    .then(({ data: teacher }) => { document.getElementById('whoName').textContent = teacher.display_name; });
 
   function setCrumbs(items) {
     crumbs.innerHTML = items.map((it, i) =>
@@ -229,13 +229,16 @@ if (session) {
       return;
     }
 
+    // Ein Query für alle Schüler-Zahlen statt einem Query pro Klasse
+    const { data: allStudents } = await supabase.from('students').select('class_id');
+    const countByClass = {};
+    for (const s of allStudents ?? []) countByClass[s.class_id] = (countByClass[s.class_id] ?? 0) + 1;
+
     for (const c of classes) {
-      const { count } = await supabase
-        .from('students').select('id', { count: 'exact', head: true }).eq('class_id', c.id);
       const kindLabel = c.type === 'kurs' ? 'Kurs' : 'Klasse';
       const tile = document.createElement('div');
       tile.className = 'tile';
-      tile.innerHTML = `<div class="tile-title">${c.name}</div><div class="tile-sub">${kindLabel} · Stufe ${c.grade} · ${count ?? 0} / ${c.capacity} Schüler</div>`;
+      tile.innerHTML = `<div class="tile-title">${c.name}</div><div class="tile-sub">${kindLabel} · Stufe ${c.grade} · ${countByClass[c.id] ?? 0} / ${c.capacity} Schüler</div>`;
       tile.addEventListener('click', () => showClassDetail(c));
       grid.appendChild(tile);
     }
@@ -271,12 +274,17 @@ if (session) {
     async function loadTopic(topicId) {
       planList.innerHTML = '<p class="empty">Lade …</p>';
 
-      const { data: tasks, error } = await supabase
-        .from('tasks')
-        .select('id, title, content, page_number, section_title, difficulty, order_index')
-        .eq('topic_id', topicId)
-        .order('page_number', { ascending: true, nullsFirst: false })
-        .order('order_index', { ascending: true });
+      // Aufgaben und Freischaltungsstatus sind voneinander unabhängig -> parallel laden
+      const [{ data: tasks, error }, { data: statusRows }] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select('id, title, content, page_number, section_title, difficulty, order_index')
+          .eq('topic_id', topicId)
+          .order('page_number', { ascending: true, nullsFirst: false })
+          .order('order_index', { ascending: true }),
+        // Freischaltungsstatus ist pro Klasse gespeichert (unterschiedliches Tempo je Klasse)
+        supabase.from('class_task_status').select('task_id, published').eq('class_id', c.id),
+      ]);
 
       if (error) {
         planList.innerHTML = '<p class="empty">Fehler beim Laden: ' + error.message + '</p>';
@@ -287,10 +295,6 @@ if (session) {
         return;
       }
 
-      // Freischaltungsstatus ist pro Klasse gespeichert (unterschiedliches Tempo je Klasse)
-      const { data: statusRows } = await supabase
-        .from('class_task_status').select('task_id, published')
-        .eq('class_id', c.id).in('task_id', tasks.map(t => t.id));
       const publishedMap = Object.fromEntries((statusRows ?? []).map(r => [r.task_id, r.published]));
       for (const t of tasks) t.published = publishedMap[t.id] ?? false;
 
@@ -372,30 +376,28 @@ if (session) {
       { label: c.name, action: () => showClassDetail(c) },
     ]);
 
-    const { data: students } = await supabase
-      .from('students').select('id, display_name').eq('class_id', c.id).order('display_name');
-
-    const { data: topics } = await supabase
-      .from('topics').select('id, title, order_index').eq('grade', c.grade).order('order_index');
-
-    const { data: statusRows } = await supabase
-      .from('class_task_status').select('task_id, published').eq('class_id', c.id).eq('published', true);
+    // students/topics/statusRows sind voneinander unabhängig -> parallel laden
+    const [{ data: students }, { data: topics }, { data: statusRows }] = await Promise.all([
+      supabase.from('students').select('id, display_name').eq('class_id', c.id).order('display_name'),
+      supabase.from('topics').select('id, title, order_index').eq('grade', c.grade).order('order_index'),
+      supabase.from('class_task_status').select('task_id, published').eq('class_id', c.id).eq('published', true),
+    ]);
     const publishedIds = new Set((statusRows ?? []).map(r => r.task_id));
 
-    const { data: allTasks } = await supabase
-      .from('tasks').select('id, topic_id, order_index, title')
-      .in('topic_id', (topics ?? []).map(t => t.id))
-      .order('order_index');
+    // allTasks braucht die Topic-IDs, submissions braucht die Schüler-IDs -> je von oben abhängig, aber selbst wieder parallel
+    const [{ data: allTasks }, { data: submissions }] = await Promise.all([
+      supabase.from('tasks').select('id, topic_id, order_index, title')
+        .in('topic_id', (topics ?? []).map(t => t.id))
+        .order('order_index'),
+      supabase.from('submissions')
+        .select('id, student_id, task_id, answer_text, status, evaluation, feedback, tasks(title)')
+        .in('student_id', (students ?? []).map(s => s.id)),
+    ]);
     const publishedTasks = (allTasks ?? []).filter(t => publishedIds.has(t.id));
 
     const tasksByTopic = {};
     for (const t of publishedTasks) (tasksByTopic[t.topic_id] ??= []).push(t);
     const activeTopics = (topics ?? []).filter(t => (tasksByTopic[t.id] ?? []).length > 0);
-
-    const { data: submissions } = await supabase
-      .from('submissions')
-      .select('id, student_id, task_id, answer_text, status, evaluation, feedback, tasks(title)')
-      .in('student_id', (students ?? []).map(s => s.id));
 
     const subByStudentTask = {};
     for (const s of submissions ?? []) subByStudentTask[`${s.student_id}|${s.task_id}`] = s;
