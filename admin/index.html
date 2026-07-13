@@ -104,11 +104,19 @@
     display: flex; align-items: center; gap: .6rem;
     font-family: 'IBM Plex Mono', monospace; font-size: .7rem; letter-spacing: .1em;
   }
-  .eval-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .eval-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 2px; }
   .eval-dot.green { background: var(--green); }
   .eval-dot.yellow { background: var(--yellow); }
   .eval-dot.red { background: var(--red); }
+  .eval-dot.open { background: var(--blue-bright); }
+  .eval-dot.pending { background: transparent; border: 1.5px solid var(--line); box-sizing: border-box; }
   .empty { color: var(--dim); font-family: 'IBM Plex Mono', monospace; font-size: .85rem; }
+  .chapter-sub {
+    font-family: 'IBM Plex Mono', monospace; font-size: .7rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--orange); margin: 1.2rem 0 .5rem;
+  }
+  .chapter-sub:first-of-type { margin-top: 0; }
+  .dots { display: inline-block; margin-left: .6em; vertical-align: middle; }
 
   /* Aufgabenplaner */
   .page-group { margin-bottom: 1.6rem; }
@@ -143,7 +151,7 @@
   }
   .plan-content {
     font-size: .82rem; color: var(--text); line-height: 1.4;
-    white-space: pre-line; max-height: 3.6em; overflow: hidden;
+    white-space: pre-line;
   }
   .toggle-wrap { display: flex; flex-direction: column; align-items: center; gap: .3em; flex-shrink: 0; }
   .toggle-label {
@@ -356,26 +364,55 @@ if (session) {
     const { data: students } = await supabase
       .from('students').select('id, display_name').eq('class_id', c.id).order('display_name');
 
-    const { count: totalTasks } = await supabase
-      .from('tasks').select('id, topics!inner(grade)', { count: 'exact', head: true }).eq('topics.grade', g.grade);
+    const { data: topics } = await supabase
+      .from('topics').select('id, title, order_index').eq('grade', g.grade).order('order_index');
+
+    const { data: publishedTasks } = await supabase
+      .from('tasks').select('id, topic_id, order_index, title')
+      .eq('published', true)
+      .in('topic_id', (topics ?? []).map(t => t.id))
+      .order('order_index');
+
+    const tasksByTopic = {};
+    for (const t of publishedTasks ?? []) (tasksByTopic[t.topic_id] ??= []).push(t);
+    const activeTopics = (topics ?? []).filter(t => (tasksByTopic[t.id] ?? []).length > 0);
 
     const { data: submissions } = await supabase
       .from('submissions')
       .select('id, student_id, task_id, answer_text, status, evaluation, feedback, tasks(title)')
       .in('student_id', (students ?? []).map(s => s.id));
 
-    const byStudent = {};
-    for (const s of submissions ?? []) {
-      (byStudent[s.student_id] ??= []).push(s);
-    }
+    const subByStudentTask = {};
+    for (const s of submissions ?? []) subByStudentTask[`${s.student_id}|${s.task_id}`] = s;
 
-    let html = '<div class="section-title">Schüler & Fortschritt</div><table><tr><th>Name</th><th>Fortschritt</th></tr>';
-    for (const s of students ?? []) {
-      const done = (byStudent[s.id] ?? []).length;
-      const pct = totalTasks ? Math.round((done / totalTasks) * 100) : 0;
-      html += `<tr><td>${s.display_name}</td><td><span class="progress-bar"><i style="width:${pct}%"></i></span>${done} / ${totalTasks ?? 0}</td></tr>`;
+    let html = '<div class="section-title">Schüler & Fortschritt (nur freigeschaltete Aufgaben)</div>';
+    if (activeTopics.length === 0) {
+      html += '<p class="empty">Noch keine Aufgaben freigeschaltet — siehe „Aufgaben planen".</p>';
+    } else {
+      for (const topic of activeTopics) {
+        const topicTasks = tasksByTopic[topic.id];
+        html += `<div class="chapter-sub">${topic.order_index}. ${topic.title}</div>`;
+        html += '<table><tr><th>Name</th><th>Fortschritt</th></tr>';
+        for (const s of students ?? []) {
+          let done = 0;
+          let dots = '';
+          for (const t of topicTasks) {
+            const sub = subByStudentTask[`${s.id}|${t.id}`];
+            if (sub) {
+              done++;
+              const cls = sub.evaluation ? sub.evaluation : 'open';
+              const titleAttr = sub.evaluation ? `${t.title}: bewertet` : `${t.title}: eingereicht, noch nicht bewertet`;
+              dots += `<span class="eval-dot ${cls}" title="${titleAttr}"></span>`;
+            } else {
+              dots += `<span class="eval-dot pending" title="${t.title}: offen"></span>`;
+            }
+          }
+          const pct = topicTasks.length ? Math.round((done / topicTasks.length) * 100) : 0;
+          html += `<tr><td>${s.display_name}</td><td><span class="progress-bar"><i style="width:${pct}%"></i></span>${done} / ${topicTasks.length}<span class="dots">${dots}</span></td></tr>`;
+        }
+        html += '</table>';
+      }
     }
-    html += '</table>';
 
     const pending = (submissions ?? []).filter(s => s.status !== 'graded');
     html += '<div class="section-title">Einreichungen zur Bewertung</div><div id="pendingList"></div>';

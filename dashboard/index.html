@@ -89,7 +89,19 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
     padding: 1.4rem 1.6rem; margin-bottom: 1.2rem;
   }
-  .task-title { font-weight: 600; font-size: 1rem; color: var(--cream); margin-bottom: .5rem; }
+  .task-title-row { display: flex; align-items: center; gap: .6em; margin-bottom: .5rem; }
+  .task-title { font-weight: 600; font-size: 1rem; color: var(--cream); }
+  .diff-dot {
+    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+    border: 1.5px solid var(--blue-bright); box-sizing: border-box;
+  }
+  .diff-dot[data-d="1"] { background: transparent; }
+  .diff-dot[data-d="2"] { background: linear-gradient(to top, var(--blue-bright) 50%, transparent 50%); }
+  .diff-dot[data-d="3"] { background: var(--blue-bright); }
+  .diff-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: .6rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--dim);
+  }
   .task-content { font-size: .92rem; line-height: 1.5; margin-bottom: 1rem; }
   .task-status {
     display: inline-block;
@@ -145,6 +157,7 @@
 import { supabase, guardPage, SITE_ROOT } from '../assets/supabase-client.js';
 
 const EVAL_LABEL = { green: 'Richtig', yellow: 'Teilweise richtig', red: 'Nicht richtig' };
+const DIFF_LABEL = { 1: 'leicht', 2: 'mittel', 3: 'schwer' };
 
 const session = await guardPage('student');
 if (session) {
@@ -162,7 +175,7 @@ if (session) {
 
   const { data: topics } = await supabase
     .from('topics')
-    .select('id, title, order_index, tasks(id, title, content, order_index)')
+    .select('id, title, order_index, tasks(id, title, content, order_index, difficulty)')
     .eq('grade', grade)
     .order('order_index');
 
@@ -251,7 +264,11 @@ if (session) {
 
       card.innerHTML = `
         <div class="task-status ${statusClass}">${statusLabel}</div>
-        <div class="task-title">${task.title}</div>
+        <div class="task-title-row">
+          <span class="diff-dot" data-d="${task.difficulty ?? ''}" title="${DIFF_LABEL[task.difficulty] ?? 'unbekannt'}"></span>
+          <span class="diff-label">${DIFF_LABEL[task.difficulty] ?? ''}</span>
+          <span class="task-title">${task.title}</span>
+        </div>
         <div class="task-content">${task.content}</div>
         ${sub?.feedback ? `<div class="feedback ${sub.evaluation ?? ''}">Feedback: ${sub.feedback}</div>` : ''}
         <textarea placeholder="Deine Antwort …">${sub?.answer_text ?? ''}</textarea>
