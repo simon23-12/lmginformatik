@@ -94,3 +94,19 @@ create policy "own submissions update" on submissions
 -- Hinweis: Als Lehrer greifst du über den service_role Key zu (umgeht RLS
 -- komplett) für dein eigenes Grading-Tool. Diesen Key niemals im Frontend
 -- verwenden, nur in einem privaten Backend/Skript.
+
+-- Keepalive-Heartbeat: dient nur dem externen Cronjob (cron-job.org), der
+-- alle 3 Tage die DB anpingt, damit sie im Free-Tier nicht wegen
+-- Inaktivität pausiert wird. Einzige Tabelle mit anon-Leserechten, bewusst
+-- ohne echte Daten.
+create table public._keepalive (
+  id smallint primary key default 1,
+  pinged_at timestamptz not null default now(),
+  constraint _keepalive_singleton check (id = 1)
+);
+insert into public._keepalive (id) values (1) on conflict (id) do nothing;
+alter table public._keepalive enable row level security;
+create policy "keepalive_public_read" on public._keepalive
+  for select to anon
+  using (true);
+grant select on public._keepalive to anon;
